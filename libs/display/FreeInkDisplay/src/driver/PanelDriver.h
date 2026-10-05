@@ -106,6 +106,17 @@ class PanelDriver {
     (void)buf;
   }
 
+  // Re-establish the differential baseline after begin() (boot or deep-sleep wake)
+  // from a frame the caller GUARANTEES is exactly what the glass shows, so the
+  // first FAST refresh can diff against it instead of being promoted to a clean
+  // HALF/FULL. Returns true when the baseline is now valid. Default false: panels
+  // without support keep their normal first refresh.
+  virtual bool restoreVisibleFrame(EpdBus& bus, const uint8_t* onScreen) {
+    (void)bus;
+    (void)onScreen;
+    return false;
+  }
+
   // --- grayscale (dual-plane LSB/MSB) ---
   virtual GrayscaleCapabilities grayscaleCapabilities(GrayscaleMode mode = GrayscaleMode::Overlay) const {
     (void)mode;

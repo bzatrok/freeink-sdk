@@ -244,6 +244,12 @@ class FreeInkDisplay {
   // On FreeInk the SSD1677 driver already re-seeds RED after each single-buffer
   // refresh, so this only refreshes the advisory flag; kept for API parity.
   void syncRedRamFromFrameBuffer();
+  // Restore the differential baseline after begin() (deep-sleep wake) so the first
+  // FAST refresh is a clean differential update instead of a promoted HALF. Call
+  // after begin() once the framebuffer holds exactly the frame that is on the
+  // glass (e.g. reloaded from storage). Returns false when the panel cannot
+  // restore a baseline; the first refresh then behaves as before.
+  bool restoreVisibleFrame();
 
   // Opt in to X4 fast differential against the controller's retained RED-RAM baseline
   // while the secondary buffer is released. When set, a FAST refresh with no secondary
