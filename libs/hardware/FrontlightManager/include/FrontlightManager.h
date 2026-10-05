@@ -122,6 +122,10 @@ class FrontlightManager {
 #endif
 
   bool _begun = false;
+  // LEDC duty resolution in use: the board's pwmResolutionBits, or fewer under
+  // FREEINK_FRONTLIGHT_LS when the RC_FAST clock cannot drive that many at the
+  // board's frequency.
+  uint8_t _pwmBits = 0;
 #if FREEINK_DEVICE_EEGO_A4
   bool _i2cConfigured = false;
 #endif
