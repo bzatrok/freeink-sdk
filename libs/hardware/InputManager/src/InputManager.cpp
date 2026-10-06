@@ -2369,6 +2369,11 @@ void InputManager::pollGt911(const unsigned long now) {
     touchPoint.valid = false;
   }
 
+  // A finger on the capacitive home key often also covers the glass just above
+  // it, so the same frame (or the next one) carries a screen contact. The key
+  // wins: suppress the contact so it never routes as a tap next to the key.
+  if (touchHomeKeyDown) suppressTouchContact();
+
   gt911ClearStatus();  // GT911 requires clearing 0x814E after each read
 }
 
