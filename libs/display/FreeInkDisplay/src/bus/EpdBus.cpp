@@ -1,6 +1,7 @@
 #include "EpdBus.h"
 
 #include <BoardConfig.h>
+#include <FreeInkLatencyTrace.h>
 #include <driver/gpio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -231,6 +232,7 @@ void EpdBus::rawWriteBytes(const uint8_t* d, uint16_t len) {
 void EpdBus::waitBusy(const char* tag) { waitBusy(_busy, tag); }
 
 void EpdBus::waitBusy(BusyPolarity p, const char* tag) {
+  FREEINK_LAT_BUSY_SCOPE();
   const unsigned long start = millis();
   // Both hooks engage lazily, only once the wait has proven long (see
   // setBusyWaitHooks). longWait gates the slice hook independently of the
@@ -322,6 +324,7 @@ void EpdBus::waitBusy(BusyPolarity p, const char* tag) {
 }
 
 void EpdBus::waitRefreshComplete(const char* tag) {
+  FREEINK_LAT_WAIT_SCOPE();
   // The X4 Pro UC production wait is level-based, not edge-qualified. Keep the
   // same one-tick/idle-HIGH rule for refresh completion so a missed assertion
   // edge can never make the caller write RAM while the waveform is still busy.
