@@ -171,6 +171,43 @@ static void testAsyncFrame() {
   free(driver._grayBase);
 }
 
+// After a deep-sleep wake begin() wipes the controller and arms the first-paint
+// HALF promotion. restoreVisibleFrame() must seed RED from the on-screen frame so
+// the first FAST stays a differential 0xFC, for both polarities.
+static void testRestoreVisibleFrame() {
+  const auto onScreen = frame(51), next = frame(72);
+  for (bool inverted : {false, true}) {
+    Ssd1677Driver driver;
+    FreeInkDisplay display(12, 11, 13, 18, 14, 6);
+    display._driver = &driver;
+    display.begin();
+    assert(driver._needsInitialFull);
+    std::memcpy(display.getFrameBuffer(), onScreen.data(), onScreen.size());
+    if (inverted) display.setInverted(true);
+    display._bus.clear();
+    assert(display.restoreVisibleFrame());
+    Bytes expectedRed = onScreen;
+    if (inverted) for (auto& b : expectedRed) b = uint8_t(~b);
+    assert(lastPlane(display._bus, 0x26) == expectedRed);
+    for (const auto& w : display._bus.writes) assert(w.command != 0x20);  // no refresh
+    // The host framebuffer stays logical.
+    assert(std::equal(onScreen.begin(), onScreen.end(), display.getFrameBuffer()));
+    assert(!driver._needsInitialFull && !display._inversionDirty && display.isRedRamSynced());
+
+    std::memcpy(display.getFrameBuffer(), next.data(), next.size());
+    display._bus.clear();
+    display.displayBuffer(FreeInkDisplay::FAST_REFRESH);
+    assert(lastRegister(display._bus, 0x22) == 0xFC);
+    for (const auto& w : display._bus.writes) assert(!(w.command == 0x22 && w.bytes.at(0) == 0xD7));
+    // Any RED write before the activation (dual-buffer prev) must keep the restored baseline.
+    for (const auto& w : display._bus.writes) {
+      if (w.command == 0x20) break;
+      if (w.command == 0x26) assert(w.bytes == expectedRed);
+    }
+    display.releaseBuffers();
+  }
+}
+
 // A driver with no grayscale implementation must never advertise support.
 class BwOnlyDriver : public PanelDriver {
  public:
@@ -639,5 +676,6 @@ int main(int argc, char** argv) {
   testSsd();
   testAsyncFrame<Uc8179Driver>();
   testAsyncFrame<Uc8279X4Driver>();
+  testRestoreVisibleFrame();
   std::puts("Pro plane bytes, transaction counts, clean refreshes, power state and async frame ownership passed");
 }

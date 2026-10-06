@@ -613,6 +613,16 @@ void Ssd1677Driver::seedPreviousFrame(EpdBus& bus, const uint8_t* buf) {
   writeRam(bus, CMD_WRITE_RAM_RED, buf, _bufferSize);
 }
 
+bool Ssd1677Driver::restoreVisibleFrame(EpdBus& bus, const uint8_t* onScreen) {
+  if (!onScreen) return false;
+  // RED now matches the glass, so the first-paint promotion is unnecessary: a
+  // differential FAST drives exactly the pixels that change. _needsGrayClear is
+  // left alone so an explicit requestResync() still gets its clean refresh.
+  seedPreviousFrame(bus, onScreen);
+  _needsInitialFull = false;
+  return true;
+}
+
 void Ssd1677Driver::beginGrayscale(EpdBus& bus, const uint8_t* fb, GrayscaleMode mode, RefreshMode fallback, bool turnOff) {
   _absoluteInput = mode == GrayscaleMode::Absolute;
   // Absolute planes supply every target pixel; activate only the final gray image.

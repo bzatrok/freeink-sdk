@@ -99,6 +99,7 @@ class Ssd1677Driver : public PanelDriver {
   void beginGrayscale(EpdBus& bus, const uint8_t* fb, GrayscaleMode mode, RefreshMode fallback, bool turnOff) override;
 
   void seedPreviousFrame(EpdBus& bus, const uint8_t* buf) override;
+  bool restoreVisibleFrame(EpdBus& bus, const uint8_t* onScreen) override;
 
   GrayscaleCapabilities grayscaleCapabilities(GrayscaleMode mode = GrayscaleMode::Overlay) const override {
     if (mode == GrayscaleMode::Absolute && _cfg.absoluteGrayscale)

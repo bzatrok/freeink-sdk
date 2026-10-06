@@ -8,6 +8,7 @@
 #ifdef FREEINK_FRONTLIGHT_LS
 #include <driver/gpio.h>
 #include <driver/ledc.h>
+#include <soc/clk_tree_defs.h>
 // esp_sleep_sub_mode_config lives in a private IDF header (no public API exists
 // for balancing the refcounted RC_FAST keep-on the LEDC driver takes for
 // KEEP_ALIVE channels — the driver manages it through this same header). Pinned
@@ -79,6 +80,15 @@ uint32_t physicalDuty(uint32_t logicalDuty, uint32_t full, bool activeHigh) {
 }
 
 #ifdef FREEINK_FRONTLIGHT_LS
+// The LEDC timer needs freq * 2^bits <= its source clock. RC_FAST (~17.5 MHz on
+// the S3) cannot drive every board profile at full resolution: the X4 Pro's
+// 25 kHz / 10-bit needs 25.6 MHz. Keep the board's frequency (changing it can
+// make the LED driver audible) and drop resolution bits until it fits.
+uint8_t lsResolutionBits(const uint32_t freq, uint8_t bits) {
+  while (bits > 1 && (static_cast<uint64_t>(freq) << bits) > SOC_CLK_RC_FAST_FREQ_APPROX) --bits;
+  return bits;
+}
+
 // Light-sleep-surviving LEDC: clock the timer from RC_FAST (~17.5 MHz on the
 // S3 — the practical LEDC source that keeps running through light sleep at
 // near-zero extra sleep power; XTAL can also be kept up but costs far more in
@@ -86,9 +96,9 @@ uint32_t physicalDuty(uint32_t logicalDuty, uint32_t full, bool activeHigh) {
 // channels KEEP_ALIVE, and disable the GPIO sleep-isolation override on the
 // output pins (a documented gotcha: sleep entry reconfigures the pad and kills
 // the PWM even when the clock survives). RC_FAST at 10 kHz supports up to
-// 10-bit resolution (17.5 MHz / 10 kHz = 1750 >= 1024), so the board profiles'
-// full duty range — including setBrightnessLevel's level-1 minimum step — stays
-// expressible. Uses the IDF driver directly (fixed LEDC_TIMER_0 + the channel
+// 10-bit resolution (17.5 MHz / 10 kHz = 1750 >= 1024); faster boards get the
+// bits lsResolutionBits() leaves them. setBrightnessLevel's level-1 minimum step
+// stays at least 1 LSB either way. Uses the IDF driver directly (fixed LEDC_TIMER_0 + the channel
 // ids below) because the Arduino helpers don't expose sleep_mode; safe here
 // because frontlight boards using this flag have no other LEDC consumer.
 bool attachChannel(int8_t gpio, uint8_t ch, uint32_t freq, uint8_t bits) {
@@ -171,9 +181,17 @@ void FrontlightManager::begin() {
   }
   if (fl.gpio == BoardConfig::PIN_UNASSIGNED) return;
 
-  bool attachOk = attachChannel(fl.gpio, LEDC_CH_COOL, fl.pwmFrequency, fl.pwmResolutionBits);
+  _pwmBits = fl.pwmResolutionBits;
+#ifdef FREEINK_FRONTLIGHT_LS
+  _pwmBits = lsResolutionBits(fl.pwmFrequency, fl.pwmResolutionBits);
+  if (_pwmBits != fl.pwmResolutionBits) {
+    LOG_INF("FrontlightMgr", "begin: %u-bit PWM at %u Hz for RC_FAST (board asks %u-bit)", _pwmBits,
+            static_cast<unsigned>(fl.pwmFrequency), fl.pwmResolutionBits);
+  }
+#endif
+  bool attachOk = attachChannel(fl.gpio, LEDC_CH_COOL, fl.pwmFrequency, _pwmBits);
   if (fl.gpioWarm != BoardConfig::PIN_UNASSIGNED) {
-    attachOk = attachChannel(fl.gpioWarm, LEDC_CH_WARM, fl.pwmFrequency, fl.pwmResolutionBits) || attachOk;
+    attachOk = attachChannel(fl.gpioWarm, LEDC_CH_WARM, fl.pwmFrequency, _pwmBits) || attachOk;
   }
 #ifdef FREEINK_FRONTLIGHT_LS
   // Defensive: a prior sleep cycle may have left the pads held (park() latches a
@@ -309,7 +327,7 @@ void FrontlightManager::apply() {
   }
   if (fl.gpio == BoardConfig::PIN_UNASSIGNED) return;
 
-  const uint32_t full = maxDuty(fl.pwmResolutionBits);
+  const uint32_t full = maxDuty(_pwmBits);
   const bool dual = fl.gpioWarm != BoardConfig::PIN_UNASSIGNED;
 
   // Convert brightness to PWM precision BEFORE splitting it between channels.

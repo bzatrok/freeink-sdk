@@ -775,6 +775,28 @@ void FreeInkDisplay::syncRedRamFromFrameBuffer() {
 #endif
 }
 
+bool FreeInkDisplay::restoreVisibleFrame() {
+  // X3 keeps its baseline in DTM1, not a host-managed plane.
+  if (!_driver || !frameBuffer || _panelSel == PanelSel::X3) return false;
+  syncPendingAsync();  // never touch RED while a waveform is still reading it
+  // The controller holds the physical (inverted) bytes; the framebuffer stays logical.
+  if (_inverted) invertBytes(frameBuffer, bufferSize);
+  const bool restored = _driver->restoreVisibleFrame(_bus, frameBuffer);
+  if (_inverted) invertBytes(frameBuffer, bufferSize);
+  if (!restored) return false;
+  _redRamSynced = true;
+  // The inverted baseline was just seeded, so the inversion no longer needs a clean refresh.
+  _inversionDirty = false;
+#ifndef EINK_DISPLAY_SINGLE_BUFFER_MODE
+  // Dual-buffer FAST rewrites RED from the secondary at its start, and begin()
+  // filled the secondary white. Make it hold the on-screen frame too, or the
+  // first diff would run against white and leave undriven pixels.
+  if (frameBufferActive) memcpy(frameBufferActive, frameBuffer, bufferSize);
+  _redBaselineAuthoritative = false;
+#endif
+  return true;
+}
+
 // Kept as a stable entry point for firmware already calling it; the logic
 // lives in displayAsyncImpl's noShadow path.
 void FreeInkDisplay::displayBufferAsyncNoShadow(RefreshMode mode) {
